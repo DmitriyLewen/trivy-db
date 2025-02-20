@@ -3,6 +3,7 @@ package db
 import (
 	"encoding/json"
 
+	"github.com/aquasecurity/trivy-db/pkg/log"
 	"github.com/samber/oops"
 	bolt "go.etcd.io/bbolt"
 
@@ -26,6 +27,8 @@ func (dbc Config) GetAdvisories(source, pkgName string) ([]types.Advisory, error
 	if err != nil {
 		return nil, eb.Wrapf(err, "advisory foreach error")
 	}
+	log.WithPrefix("trivy-db-test").Debug("advisories found",
+		log.Int("advisories", len(advisories)), log.String("source", source), log.String("pkgName", pkgName))
 	if len(advisories) == 0 {
 		return nil, nil
 	}

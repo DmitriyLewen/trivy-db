@@ -194,6 +194,8 @@ func (dbc Config) forEach(bktNames []string) (map[string]Value, error) {
 		return nil, eb.Errorf("bucket must be nested")
 	}
 	rootBucket, nestedBuckets := bktNames[0], bktNames[1:]
+	log.WithPrefix("trivy-db-test").Debug("forEach function",
+		log.String("rootBucket", rootBucket), log.String("nestedBuckets", strings.Join(nestedBuckets, ",")))
 
 	values := map[string]Value{}
 	err := db.View(func(tx *bolt.Tx) error {
@@ -211,9 +213,12 @@ func (dbc Config) forEach(bktNames []string) (map[string]Value, error) {
 			rootBuckets = append(rootBuckets, rootBucket)
 		}
 
+		log.WithPrefix("trivy-db-test").Debug("db.View function",
+			log.String("rootBuckets", strings.Join(rootBuckets, ",")))
 		for _, r := range rootBuckets {
 			root := tx.Bucket([]byte(r))
 			if root == nil {
+				log.WithPrefix("trivy-db-test").Debug("db.View function. got nil root bucket")
 				continue
 			}
 
@@ -225,15 +230,18 @@ func (dbc Config) forEach(bktNames []string) (map[string]Value, error) {
 			bkt := root
 			for _, nestedBkt := range nestedBuckets {
 				bkt = bkt.Bucket([]byte(nestedBkt))
+				log.WithPrefix("trivy-db-test").Debug("db.View function. got nil bkt", log.String("nestedBkt", nestedBkt))
 				if bkt == nil {
 					break
 				}
 			}
 			if bkt == nil {
+				log.WithPrefix("trivy-db-test").Debug("db.View function. got nil bkt")
 				continue
 			}
 
 			err = bkt.ForEach(func(k, v []byte) error {
+				log.WithPrefix("trivy-db-test").Debug("bkt.ForEach", log.String("k", string(k)), log.String("v", string(v)))
 				if len(v) == 0 {
 					return nil
 				}
