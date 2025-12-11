@@ -103,8 +103,8 @@ func (vs VulnSrc) Update(dir string) error {
 						VulnerabilityID: cveID,
 						PkgName:         pkg.Pkg.Name,
 						Patch: types.Advisory{
-							VulnerableVersions: cveInfo.VulnerableRanges,
-							PatchedVersions:    cveInfo.FixedVersions,
+							VulnerableVersions: splitVersions(cveInfo.VulnerableRanges),
+							PatchedVersions:    splitVersions(cveInfo.FixedVersions),
 						},
 					}
 					feeds[platformName] = append(feeds[platformName], feed)
@@ -168,6 +168,17 @@ func (vs VulnSrc) put(tx *bolt.Tx, platform string, feed Feed) error {
 	}
 
 	return nil
+}
+
+// splitVersions splits versions or version range separated by "||".
+func splitVersions(versions []string) []string {
+	var allVersions []string
+	for _, v := range versions {
+		for _, sv := range strings.Split(v, "||") {
+			allVersions = append(allVersions, strings.TrimSpace(sv))
+		}
+	}
+	return allVersions
 }
 
 type VulnSrcGetter struct {

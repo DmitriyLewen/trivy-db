@@ -76,8 +76,16 @@ func TestVulnSrc_Update(t *testing.T) {
 						"memcached",
 					},
 					Value: types.Advisory{
-						VulnerableVersions: []string{"<1.6.17-r00071"},
-						PatchedVersions:    []string{"1.6.17-r00071"},
+						VulnerableVersions: []string{
+							"<1.20.2-r10072",
+							">1.20.2-r10072 <1.20.2-r10073",
+							">1.20.2-r10073 <1.20.2-r10074",
+						},
+						PatchedVersions: []string{
+							"1.20.2-r10072",
+							"1.20.2-r10073",
+							"1.20.2-r10074",
+						},
 					},
 				},
 				{
