@@ -24,6 +24,9 @@ func TestVulnSrc_Update(t *testing.T) {
 		{
 			name: "happy path",
 			dir:  filepath.Join("testdata", "happy"),
+			noBuckets: [][]string{
+				{"vulnerability-id", "CVE-2024-99999"},
+			},
 			wantValues: []vulnsrctest.WantValues{
 				{
 					Key: []string{
