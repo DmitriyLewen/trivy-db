@@ -12,6 +12,7 @@ import (
 	pep440 "github.com/aquasecurity/go-pep440-version"
 	"github.com/aquasecurity/go-version/pkg/semver"
 	"github.com/aquasecurity/go-version/pkg/version"
+	deb "github.com/knqyf263/go-deb-version"
 )
 
 type VersionRange interface {
@@ -24,6 +25,7 @@ type VersionRange interface {
 func NewVersionRange(ecosystem, from string) VersionRange {
 	vr := &versionRange{from: from}
 	ecoStr := strings.ToLower(ecosystem)
+	ecoStr, _, _ = strings.Cut(ecoStr, ":")
 	switch ecoStr {
 	case ecosystemNpm:
 		return &NpmVersionRange{versionRange: vr}
@@ -37,6 +39,8 @@ func NewVersionRange(ecosystem, from string) VersionRange {
 		return &SemVerRange{versionRange: vr}
 	case ecosystemPackagist:
 		return &DefaultVersionRange{versionRange: vr}
+	case ecosystemUbuntu:
+		return &UbuntuVersionRange{versionRange: vr}
 	default:
 		return &DefaultVersionRange{versionRange: vr}
 	}
@@ -206,4 +210,48 @@ func (r *MavenVersionRange) Contains(ver string) (bool, error) {
 	}
 
 	return c.Check(v), nil
+}
+
+type UbuntuVersionRange struct {
+	*versionRange
+}
+
+func (r *UbuntuVersionRange) Contains(ver string) (bool, error) {
+	eb := oops.Tags("ubuntu").With("version_range", r.String()).With("version", ver)
+
+	v, err := deb.NewVersion(ver)
+	if err != nil {
+		return false, eb.Wrapf(err, "failed to parse version")
+	}
+
+	// Check lower bound if r.from is specified
+	if r.from != "" {
+		f, err := deb.NewVersion(r.from)
+		if err != nil {
+			return false, eb.Wrapf(err, "failed to parse from version")
+		}
+
+		if v.LessThan(f) {
+			return false, nil
+		}
+	}
+
+	// Check upper bound if r.to is specified
+	if r.to != "" {
+		t, err := deb.NewVersion(r.to)
+		if err != nil {
+			return false, eb.Wrapf(err, "failed to parse to version")
+		}
+
+		if r.toIncluded {
+			// last_affected: version should be <= to
+			return !v.GreaterThan(t), nil
+		}
+
+		// fixed: version should be < to
+		return t.GreaterThan(v), nil
+	}
+
+	// No upper bound, version is in range
+	return true, nil
 }

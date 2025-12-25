@@ -24,6 +24,7 @@ const (
 	ecosystemBitnami    = "bitnami"
 	ecosystemKubernetes = "kubernetes"
 	ecosystemSeal       = "seal"
+	ecosystemUbuntu     = "ubuntu"
 )
 
 type RangeType string
