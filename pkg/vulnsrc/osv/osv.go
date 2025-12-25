@@ -263,7 +263,7 @@ func (o OSV) parseAffected(entry Entry, vulnIDs, aliases, references []string) (
 			cvssVectorV3, cvssScoreV3 = vecV3, scoreV3
 		}
 
-		key := fmt.Sprintf("%s/%s", bkt.Ecosystem(), pkgName)
+		key := fmt.Sprintf("%s/%s", bkt.Name(), pkgName)
 		for _, vulnID := range vulnIDs {
 			adv, ok := uniqAdvisories[key]
 			if ok {
