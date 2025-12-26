@@ -79,6 +79,66 @@ func TestVulnSrc_Update(t *testing.T) {
 			},
 		},
 		{
+			name: "FIPS packages are skipped, regular packages are processed",
+			dir:  "testdata",
+			wantValues: []vulnsrctest.WantValues{
+				// Data source for 20.04 (regular package)
+				{
+					Key: []string{
+						"data-source",
+						"ubuntu 20.04",
+					},
+					Value: types.DataSource{
+						ID:   vulnerability.Ubuntu,
+						Name: "Ubuntu CVE Tracker",
+						URL:  "https://git.launchpad.net/ubuntu-cve-tracker",
+					},
+				},
+				// Advisory for test-package (regular package) - should exist
+				{
+					Key: []string{
+						"advisory-detail",
+						"CVE-2024-FIPS-TEST",
+						"ubuntu 20.04",
+						"test-package",
+					},
+					Value: types.Advisory{
+						VendorIDs: []string{
+							"UBUNTU-CVE-2024-FIPS-TEST",
+						},
+						VulnerableVersions: []string{
+							">=0",
+						},
+						PatchedVersions: []string{},
+					},
+				},
+				// Vulnerability detail for CVE-2024-FIPS-TEST
+				{
+					Key: []string{
+						"vulnerability-detail",
+						"CVE-2024-FIPS-TEST",
+						string(vulnerability.Ubuntu),
+					},
+					Value: types.VulnerabilityDetail{
+						Description: "Test CVE with both FIPS and regular packages",
+						References: []string{
+							"https://ubuntu.com/security/CVE-2024-FIPS-TEST",
+							"https://www.cve.org/CVERecord?id=CVE-2024-FIPS-TEST",
+						},
+						PublishedDate:    utils.MustTimeParse("2024-01-01T00:00:00Z"),
+						LastModifiedDate: utils.MustTimeParse("2024-01-02T00:00:00Z"),
+					},
+				},
+				{
+					Key: []string{
+						"vulnerability-id",
+						"CVE-2024-FIPS-TEST",
+					},
+					Value: map[string]any{},
+				},
+			},
+		},
+		{
 			name: "ESM with non-ESM versions creates advisories for both",
 			dir:  "testdata",
 			wantValues: []vulnsrctest.WantValues{
