@@ -33,7 +33,7 @@ func TestVulnSrc_Update(t *testing.T) {
 					Value: types.DataSource{
 						ID:   vulnerability.Ubuntu,
 						Name: "Ubuntu CVE Tracker",
-						URL:  "https://git.launchpad.net/ubuntu-cve-tracker",
+						URL:  "https://github.com/canonical/ubuntu-security-notices",
 					},
 				},
 				{
@@ -94,7 +94,7 @@ func TestVulnSrc_Update(t *testing.T) {
 					Value: types.DataSource{
 						ID:   vulnerability.Ubuntu,
 						Name: "Ubuntu CVE Tracker",
-						URL:  "https://git.launchpad.net/ubuntu-cve-tracker",
+						URL:  "https://github.com/canonical/ubuntu-security-notices",
 					},
 				},
 				// Advisory for test-package (regular package) - should exist
@@ -154,7 +154,7 @@ func TestVulnSrc_Update(t *testing.T) {
 					Value: types.DataSource{
 						ID:   vulnerability.Ubuntu,
 						Name: "Ubuntu CVE Tracker",
-						URL:  "https://git.launchpad.net/ubuntu-cve-tracker",
+						URL:  "https://github.com/canonical/ubuntu-security-notices",
 					},
 				},
 				// Data source for 16.04 (non-ESM, created by transformer)
@@ -166,7 +166,7 @@ func TestVulnSrc_Update(t *testing.T) {
 					Value: types.DataSource{
 						ID:   vulnerability.Ubuntu,
 						Name: "Ubuntu CVE Tracker",
-						URL:  "https://git.launchpad.net/ubuntu-cve-tracker",
+						URL:  "https://github.com/canonical/ubuntu-security-notices",
 					},
 				},
 				{
