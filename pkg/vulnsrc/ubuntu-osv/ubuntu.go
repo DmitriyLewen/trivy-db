@@ -18,7 +18,7 @@ var (
 	source = types.DataSource{
 		ID:   vulnerability.Ubuntu,
 		Name: "Ubuntu CVE Tracker",
-		URL:  "https://git.launchpad.net/ubuntu-cve-tracker",
+		URL:  "https://github.com/canonical/ubuntu-security-notices",
 	}
 
 	// errSkipped is returned when ecosystem should be skipped (not an actual error)
