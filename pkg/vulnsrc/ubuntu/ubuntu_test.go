@@ -38,17 +38,13 @@ func TestVulnSrc_Update(t *testing.T) {
 			{
 				Key: []string{"advisory-detail", "CVE-2022-2068", "ubuntu 16.04-ESM", "edk2"},
 				Value: types.Advisory{
-					VendorIDs:          []string{"UBUNTU-CVE-2022-2068"},
-					VulnerableVersions: []string{">=0"},
-					PatchedVersions:    []string{},
+					VendorIDs: []string{"UBUNTU-CVE-2022-2068"},
 				},
 			},
 			{
 				Key: []string{"advisory-detail", "CVE-2022-2068", "ubuntu 16.04", "edk2"},
 				Value: types.Advisory{
-					VendorIDs:          []string{"UBUNTU-CVE-2022-2068"},
-					VulnerableVersions: []string{">=0"},
-					PatchedVersions:    []string{},
+					VendorIDs: []string{"UBUNTU-CVE-2022-2068"},
 				},
 			},
 			{
@@ -80,17 +76,15 @@ func TestVulnSrc_Update(t *testing.T) {
 			{
 				Key: []string{"advisory-detail", "CVE-2025-58056", "ubuntu 16.04-ESM", "netty"},
 				Value: types.Advisory{
-					VendorIDs:          []string{"UBUNTU-CVE-2025-58056"},
-					VulnerableVersions: []string{"<1:4.0.34-1ubuntu0.1~esm3"},
-					PatchedVersions:    []string{"1:4.0.34-1ubuntu0.1~esm3"},
+					VendorIDs:    []string{"UBUNTU-CVE-2025-58056"},
+					FixedVersion: "1:4.0.34-1ubuntu0.1~esm3",
 				},
 			},
 			{
 				Key: []string{"advisory-detail", "CVE-2025-58056", "ubuntu 16.04", "netty"},
 				Value: types.Advisory{
-					VendorIDs:          []string{"UBUNTU-CVE-2025-58056"},
-					VulnerableVersions: []string{"<1:4.0.34-1ubuntu0.1~esm3"},
-					PatchedVersions:    []string{"1:4.0.34-1ubuntu0.1~esm3"},
+					VendorIDs:    []string{"UBUNTU-CVE-2025-58056"},
+					FixedVersion: "1:4.0.34-1ubuntu0.1~esm3",
 				},
 			},
 			{

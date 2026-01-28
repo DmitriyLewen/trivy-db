@@ -35,6 +35,9 @@ type Advisory struct {
 	OSes               []string
 	Arches             []string
 
+	// For OS packages (e.g. Ubuntu)
+	FixedVersion string
+
 	// Vulnerability detail
 	Severity     types.Severity
 	Title        string
@@ -199,6 +202,7 @@ func (o OSV) commit(tx *bolt.Tx, entry Entry) error {
 			VendorIDs:          adv.Aliases,
 			VulnerableVersions: adv.VulnerableVersions,
 			PatchedVersions:    adv.PatchedVersions,
+			FixedVersion:       adv.FixedVersion,
 			OSes:               adv.OSes,
 			Arches:             adv.Arches,
 		}

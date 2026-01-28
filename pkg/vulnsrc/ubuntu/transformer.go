@@ -18,6 +18,13 @@ func (t *transformer) TransformAdvisories(advs []osv.Advisory, _ osv.Entry) ([]o
 	var result []osv.Advisory
 
 	for _, adv := range advs {
+		// Use FixedVersion for OS packages and clear VulnerableVersions and PatchedVersions
+		if len(adv.PatchedVersions) > 0 {
+			adv.FixedVersion = adv.PatchedVersions[0]
+		}
+		adv.VulnerableVersions = nil
+		adv.PatchedVersions = nil
+
 		result = append(result, adv)
 
 		// For ESM buckets, also create an advisory for the non-ESM bucket

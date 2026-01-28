@@ -41,6 +41,10 @@ func resolveBucket(suffix string) (bucket.Bucket, error) {
 
 	// "25.10" or "14.04:LTS"
 	if len(parts) <= 2 {
+		// parts[0] must be a version (e.g. "25.10", "14.04"), not a modifier like "lts"
+		if !strings.Contains(parts[0], ".") {
+			return nil, errSkipped
+		}
 		return newBucket(parts[0], source), nil
 	}
 
