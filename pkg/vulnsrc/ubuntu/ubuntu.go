@@ -3,9 +3,9 @@ package ubuntu
 import (
 	"strings"
 
-	"github.com/aquasecurity/trivy-db/pkg/db"
 	"github.com/samber/oops"
 
+	"github.com/aquasecurity/trivy-db/pkg/db"
 	"github.com/aquasecurity/trivy-db/pkg/ecosystem"
 	"github.com/aquasecurity/trivy-db/pkg/types"
 	"github.com/aquasecurity/trivy-db/pkg/vulnsrc/bucket"
@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	vulnsDir = "ubuntu-security-notices/cve"
+	vulnsDir = "ubuntu-security-notices/osv/cve"
 
 	source = types.DataSource{
 		ID:   vulnerability.Ubuntu,
