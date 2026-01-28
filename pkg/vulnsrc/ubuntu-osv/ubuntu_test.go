@@ -1,11 +1,11 @@
-package ubuntunew_test
+package ubuntuosv_test
 
 import (
 	"testing"
 
 	"github.com/aquasecurity/trivy-db/pkg/types"
 	"github.com/aquasecurity/trivy-db/pkg/utils"
-	ubuntunew "github.com/aquasecurity/trivy-db/pkg/vulnsrc/ubuntu-new"
+	ubuntuosv "github.com/aquasecurity/trivy-db/pkg/vulnsrc/ubuntu-osv"
 	"github.com/aquasecurity/trivy-db/pkg/vulnsrc/vulnerability"
 	"github.com/aquasecurity/trivy-db/pkg/vulnsrctest"
 )
@@ -193,7 +193,7 @@ func TestVulnSrc_Update(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			vs := ubuntunew.NewVulnSrc()
+			vs := ubuntuosv.NewVulnSrc()
 			vulnsrctest.TestUpdate(t, vs, vulnsrctest.TestUpdateArgs{
 				Dir:        tt.dir,
 				WantValues: tt.wantValues,

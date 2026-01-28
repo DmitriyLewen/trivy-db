@@ -1,4 +1,4 @@
-package ubuntunew
+package ubuntuosv
 
 import (
 	"github.com/aquasecurity/trivy-db/pkg/ecosystem"
