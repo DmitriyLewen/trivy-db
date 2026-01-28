@@ -235,7 +235,7 @@ func (o OSV) parseAffected(entry Entry, vulnIDs, aliases, references []string) (
 	eb := oops.With("entry_id", entry.ID).With("vuln_ids", vulnIDs).With("aliases", aliases)
 
 	// Severities can be found both in severity and affected[].severity fields.
-	cvssVectorV3, cvssScoreV3, err := parseSeverity(entry.Severities)
+	cvssVectorV3, cvssScoreV3, severity, err := parseSeverity(entry.Severities)
 	if err != nil {
 		return nil, eb.Wrapf(err, "failed to decode CVSS vector")
 	}
@@ -256,11 +256,14 @@ func (o OSV) parseAffected(entry Entry, vulnIDs, aliases, references []string) (
 		}
 
 		// Parse affected[].severity
-		if vecV3, scoreV3, err := parseSeverity(affected.Severities); err != nil {
+		if vecV3, scoreV3, sev, err := parseSeverity(affected.Severities); err != nil {
 			return nil, eb.Wrapf(err, "failed to decode CVSS vector")
 		} else if vecV3 != "" {
 			// Overwrite the CVSS vector and score if affected[].severity is set
 			cvssVectorV3, cvssScoreV3 = vecV3, scoreV3
+		} else if sev != types.SeverityUnknown {
+			// Overwrite the severity if affected[].severity is set
+			severity = sev
 		}
 
 		key := fmt.Sprintf("%s/%s", bkt.Name(), pkgName)
@@ -279,6 +282,7 @@ func (o OSV) parseAffected(entry Entry, vulnIDs, aliases, references []string) (
 					Aliases:            aliases,
 					VulnerableVersions: vulnerableVersions,
 					PatchedVersions:    patchedVersions,
+					Severity:           severity,
 					Title:              entry.Summary,
 					Description:        entry.Details,
 					References:         references,
@@ -370,43 +374,55 @@ func parseAffectedVersions(affected Affected) ([]string, []string, error) {
 	return vulnerableVersions, patchedVersions, nil
 }
 
-// parseSeverity parses the severity field and returns CVSSv3 vector and score
+// parseSeverity parses the severity field and returns CVSSv3 vector, score, and vendor severity
 // cf.
 // - https://ossf.github.io/osv-schema/#severity-field
 // - https://ossf.github.io/osv-schema/#affectedseverity-field
-func parseSeverity(severities []Severity) (string, float64, error) {
+func parseSeverity(severities []Severity) (string, float64, types.Severity, error) {
+	var cvssVectorV3 string
+	var cvssScoreV3 float64
+	var severity types.Severity
+
 	for _, s := range severities {
-		if s.Type == "CVSS_V3" && s.Score != "" {
+		switch s.Type {
+		case "CVSS_V3":
+			if s.Score == "" || cvssVectorV3 != "" {
+				continue
+			}
 			// CVSS vectors possibly have `/` suffix
 			// e.g. https://github.com/github/advisory-database/blob/2d3bc73d2117893b217233aeb95b9236c7b93761/advisories/github-reviewed/2019/05/GHSA-j59f-6m4q-62h6/GHSA-j59f-6m4q-62h6.json#L14
 			// Trim the suffix to avoid errors
-			cvssVectorV3 := strings.TrimSuffix(s.Score, "/")
+			cvssVectorV3 = strings.TrimSuffix(s.Score, "/")
 			eb := oops.With("cvss_vector_v3", cvssVectorV3)
 			switch {
 			case strings.HasPrefix(cvssVectorV3, "CVSS:3.0"):
 				cvss, err := gocvss30.ParseVector(cvssVectorV3)
 				if err != nil {
-					return "", 0, eb.Wrapf(err, "failed to parse CVSSv3.0 vector")
+					return "", 0, types.SeverityUnknown, eb.Wrapf(err, "failed to parse CVSSv3.0 vector")
 				}
 				// cvss.EnvironmentalScore() returns the optimal score required from Vector.
 				// If the Environmental Metrics is not set, it will be the same value as TemporalScore(),
 				// and if Temporal Metrics is not set, it will be the same value as Basescore().
-				return cvssVectorV3, cvss.EnvironmentalScore(), nil
-			case strings.HasPrefix(s.Score, "CVSS:3.1"):
+				cvssScoreV3 = cvss.EnvironmentalScore()
+			case strings.HasPrefix(cvssVectorV3, "CVSS:3.1"):
 				cvss, err := gocvss31.ParseVector(cvssVectorV3)
 				if err != nil {
-					return "", 0, oops.Wrapf(err, "failed to parse CVSSv3.1 vector")
+					return "", 0, types.SeverityUnknown, eb.Wrapf(err, "failed to parse CVSSv3.1 vector")
 				}
 				// cvss.EnvironmentalScore() returns the optimal score required from Vector.
 				// If the Environmental Metrics is not set, it will be the same value as TemporalScore(),
 				// and if Temporal Metrics is not set, it will be the same value as Basescore().
-				return cvssVectorV3, cvss.EnvironmentalScore(), nil
+				cvssScoreV3 = cvss.EnvironmentalScore()
 			default:
-				return "", 0, eb.Errorf("vector does not have CVSS v3 prefix: \"CVSS:3.0\" or \"CVSS:3.1\"")
+				return "", 0, types.SeverityUnknown, eb.Errorf("vector does not have CVSS v3 prefix: \"CVSS:3.0\" or \"CVSS:3.1\"")
 			}
+		case "Ubuntu":
+			// Ubuntu is an official OSV severity type
+			// cf. https://ossf.github.io/osv-schema/#severity-field
+			severity = severityFromPriority(s.Score)
 		}
 	}
-	return "", 0, nil
+	return cvssVectorV3, cvssScoreV3, severity, nil
 }
 
 func (o OSV) resolveBucket(raw string) (bucket.Bucket, error) {
@@ -462,4 +478,22 @@ func versionContains(ranges []VersionRange, version string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// severityFromPriority converts Ubuntu priority into Trivy severity
+func severityFromPriority(priority string) types.Severity {
+	switch priority {
+	case "untriaged":
+		return types.SeverityUnknown
+	case "negligible", "low":
+		return types.SeverityLow
+	case "medium":
+		return types.SeverityMedium
+	case "high":
+		return types.SeverityHigh
+	case "critical":
+		return types.SeverityCritical
+	default:
+		return types.SeverityUnknown
+	}
 }
