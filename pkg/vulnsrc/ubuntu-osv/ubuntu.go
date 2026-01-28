@@ -3,6 +3,7 @@ package ubuntuosv
 import (
 	"strings"
 
+	"github.com/aquasecurity/trivy-db/pkg/db"
 	"github.com/samber/oops"
 
 	"github.com/aquasecurity/trivy-db/pkg/ecosystem"
@@ -58,10 +59,14 @@ func resolveBucket(suffix string) (bucket.Bucket, error) {
 	return newBucket(version, source), nil
 }
 
-type VulnSrc struct{}
+type VulnSrc struct {
+	dbc db.Operation
+}
 
 func NewVulnSrc() VulnSrc {
-	return VulnSrc{}
+	return VulnSrc{
+		dbc: db.Config{},
+	}
 }
 
 func (VulnSrc) Name() types.SourceID {
@@ -82,4 +87,14 @@ func (vs VulnSrc) Update(root string) error {
 	}
 
 	return nil
+}
+
+func (vs VulnSrc) Get(params db.GetParams) ([]types.Advisory, error) {
+	eb := oops.In("ubuntu").With("release", params.Release).With("package_name", params.PkgName)
+	bucketName := bucket.NewUbuntu(params.Release).Name()
+	advisories, err := vs.dbc.GetAdvisories(bucketName, params.PkgName)
+	if err != nil {
+		return nil, eb.Wrapf(err, "failed to get advisories")
+	}
+	return advisories, nil
 }
