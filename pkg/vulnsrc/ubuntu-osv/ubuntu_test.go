@@ -14,196 +14,112 @@ import (
 )
 
 func TestVulnSrc_Update(t *testing.T) {
-	tests := []struct {
-		name       string
-		dir        string
-		wantValues []vulnsrctest.WantValues
-		noBuckets  [][]string
-		wantErr    string
-	}{
-		{
-			name: "happy path",
-			dir:  "testdata",
-			wantValues: []vulnsrctest.WantValues{
-				{
-					Key: []string{
-						"data-source",
-						"ubuntu 14.04",
-					},
-					Value: types.DataSource{
-						ID:   vulnerability.Ubuntu,
-						Name: "Ubuntu CVE Tracker",
-						URL:  "https://github.com/canonical/ubuntu-security-notices",
-					},
-				},
-				{
-					Key: []string{
-						"advisory-detail",
-						"CVE-2025-0033",
-						"ubuntu 14.04",
-						"amd64-microcode",
-					},
-					Value: types.Advisory{
-						VendorIDs: []string{
-							"UBUNTU-CVE-2025-0033",
-						},
-						VulnerableVersions: []string{
-							">=0",
-						},
-						PatchedVersions: []string{},
-					},
-				},
-				{
-					Key: []string{
-						"vulnerability-detail",
-						"CVE-2025-0033",
-						string(vulnerability.Ubuntu),
-					},
-					Value: types.VulnerabilityDetail{
-						Description:  "Improper access control within AMD SEV-SNP could allow an admin privileged attacker to write to the RMP during SNP initialization, potentially resulting in a loss of SEV-SNP guest memory integrity.",
-						CvssScoreV3:  6.0,
-						CvssVectorV3: "CVSS:3.1/AV:L/AC:L/PR:H/UI:N/S:C/C:N/I:H/A:N",
-						References: []string{
-							"https://ubuntu.com/security/CVE-2025-0033",
-							"https://www.cve.org/CVERecord?id=CVE-2025-0033",
-							"https://www.amd.com/en/resources/product-security/bulletin/AMD-SB-3020.html",
-						},
-						PublishedDate:    utils.MustTimeParse("2025-10-14T15:16:00Z"),
-						LastModifiedDate: utils.MustTimeParse("2025-11-27T05:17:43Z"),
-					},
-				},
-				{
-					Key: []string{
-						"vulnerability-id",
-						"CVE-2025-0033",
-					},
-					Value: map[string]any{},
+	vs := ubuntuosv.NewVulnSrc()
+	vulnsrctest.TestUpdate(t, vs, vulnsrctest.TestUpdateArgs{
+		Dir: "testdata",
+		WantValues: []vulnsrctest.WantValues{
+			// CVE-2022-2068: Tests FIPS skip and Pro→ESM without fixed version
+			{
+				Key: []string{"data-source", "ubuntu 16.04-ESM"},
+				Value: types.DataSource{
+					ID:   vulnerability.Ubuntu,
+					Name: "Ubuntu CVE Tracker",
+					URL:  "https://github.com/canonical/ubuntu-security-notices",
 				},
 			},
-		},
-		{
-			name: "FIPS packages are skipped, regular packages are processed",
-			dir:  "testdata",
-			wantValues: []vulnsrctest.WantValues{
-				// Data source for 20.04 (regular package)
-				{
-					Key: []string{
-						"data-source",
-						"ubuntu 20.04",
-					},
-					Value: types.DataSource{
-						ID:   vulnerability.Ubuntu,
-						Name: "Ubuntu CVE Tracker",
-						URL:  "https://github.com/canonical/ubuntu-security-notices",
-					},
-				},
-				// Advisory for test-package (regular package) - should exist
-				{
-					Key: []string{
-						"advisory-detail",
-						"CVE-2024-FIPS-TEST",
-						"ubuntu 20.04",
-						"test-package",
-					},
-					Value: types.Advisory{
-						VendorIDs: []string{
-							"UBUNTU-CVE-2024-FIPS-TEST",
-						},
-						VulnerableVersions: []string{
-							">=0",
-						},
-						PatchedVersions: []string{},
-					},
-				},
-				// Vulnerability detail for CVE-2024-FIPS-TEST
-				{
-					Key: []string{
-						"vulnerability-detail",
-						"CVE-2024-FIPS-TEST",
-						string(vulnerability.Ubuntu),
-					},
-					Value: types.VulnerabilityDetail{
-						Description: "Test CVE with both FIPS and regular packages",
-						References: []string{
-							"https://ubuntu.com/security/CVE-2024-FIPS-TEST",
-							"https://www.cve.org/CVERecord?id=CVE-2024-FIPS-TEST",
-						},
-						PublishedDate:    utils.MustTimeParse("2024-01-01T00:00:00Z"),
-						LastModifiedDate: utils.MustTimeParse("2024-01-02T00:00:00Z"),
-					},
-				},
-				{
-					Key: []string{
-						"vulnerability-id",
-						"CVE-2024-FIPS-TEST",
-					},
-					Value: map[string]any{},
+			{
+				Key: []string{"data-source", "ubuntu 16.04"},
+				Value: types.DataSource{
+					ID:   vulnerability.Ubuntu,
+					Name: "Ubuntu CVE Tracker",
+					URL:  "https://github.com/canonical/ubuntu-security-notices",
 				},
 			},
-		},
-		{
-			name: "ESM with non-ESM versions creates advisories for both",
-			dir:  "testdata",
-			wantValues: []vulnsrctest.WantValues{
-				// Data source for 16.04-ESM
-				{
-					Key: []string{
-						"data-source",
-						"ubuntu 16.04-ESM",
-					},
-					Value: types.DataSource{
-						ID:   vulnerability.Ubuntu,
-						Name: "Ubuntu CVE Tracker",
-						URL:  "https://github.com/canonical/ubuntu-security-notices",
-					},
-				},
-				// Data source for 16.04 (non-ESM, created by transformer)
-				{
-					Key: []string{
-						"data-source",
-						"ubuntu 16.04",
-					},
-					Value: types.DataSource{
-						ID:   vulnerability.Ubuntu,
-						Name: "Ubuntu CVE Tracker",
-						URL:  "https://github.com/canonical/ubuntu-security-notices",
-					},
-				},
-				{
-					Key: []string{
-						"vulnerability-detail",
-						"CVE-2025-52881",
-						string(vulnerability.Ubuntu),
-					},
-					Value: types.VulnerabilityDetail{
-						Description:  "runc is a CLI tool for spawning and running containers according to the OCI specification. In versions 1.2.7, 1.3.2 and 1.4.0-rc.2, an attacker can trick runc into misdirecting writes to /proc to other procfs files through the use of a racing container with shared mounts (we have also verified this attack is possible to exploit using a standard Dockerfile with docker buildx build as that also permits triggering parallel execution of containers with custom shared mounts configured). This redirect could be through symbolic links in a tmpfs or theoretically other methods such as regular bind-mounts. While similar, the mitigation applied for the related CVE, CVE-2019-19921, was fairly limited and effectively only caused runc to verify that when LSM labels are written they are actually procfs files. This issue is fixed in versions 1.2.8, 1.3.3, and 1.4.0-rc.3.",
-						CvssScoreV3:  7.6,
-						CvssVectorV3: "CVSS:3.1/AV:L/AC:H/PR:L/UI:R/S:C/C:H/I:H/A:H",
-						References: []string{
-							"https://ubuntu.com/security/CVE-2025-52881",
-							"https://www.cve.org/CVERecord?id=CVE-2025-52881",
-							"https://github.com/opencontainers/runc/security/advisories/GHSA-cgrx-mc8f-2prm",
-							"https://ubuntu.com/security/notices/USN-7851-1",
-						},
-						PublishedDate:    utils.MustTimeParse("2025-11-05T09:00:00Z"),
-						LastModifiedDate: utils.MustTimeParse("2025-12-08T05:18:05Z"),
-					},
+			{
+				Key: []string{"advisory-detail", "CVE-2022-2068", "ubuntu 16.04-ESM", "edk2"},
+				Value: types.Advisory{
+					VendorIDs:          []string{"UBUNTU-CVE-2022-2068"},
+					VulnerableVersions: []string{">=0"},
+					PatchedVersions:    []string{},
 				},
 			},
-		},
-	}
+			{
+				Key: []string{"advisory-detail", "CVE-2022-2068", "ubuntu 16.04", "edk2"},
+				Value: types.Advisory{
+					VendorIDs:          []string{"UBUNTU-CVE-2022-2068"},
+					VulnerableVersions: []string{">=0"},
+					PatchedVersions:    []string{},
+				},
+			},
+			{
+				Key: []string{"vulnerability-detail", "CVE-2022-2068", string(vulnerability.Ubuntu)},
+				Value: types.VulnerabilityDetail{
+					Description:  "In addition to the c_rehash shell command injection identified in CVE-2022-1292, further circumstances where the c_rehash script does not properly sanitise shell metacharacters to prevent command injection were found by code review. When the CVE-2022-1292 was fixed it was not discovered that there are other places in the script where the file names of certificates being hashed were possibly passed to a command executed through the shell. This script is distributed by some operating systems in a manner where it is automatically executed. On such operating systems, an attacker could execute arbitrary commands with the privileges of the script. Use of the c_rehash script is considered obsolete and should be replaced by the OpenSSL rehash command line tool. Fixed in OpenSSL 3.0.4 (Affected 3.0.0,3.0.1,3.0.2,3.0.3). Fixed in OpenSSL 1.1.1p (Affected 1.1.1-1.1.1o). Fixed in OpenSSL 1.0.2zf (Affected 1.0.2-1.0.2ze).",
+					CvssScoreV3:  9.8,
+					CvssVectorV3: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+					References: []string{
+						"https://ubuntu.com/security/CVE-2022-2068",
+						"https://www.openssl.org/news/secadv/20220621.txt",
+						"https://ubuntu.com/security/notices/USN-5488-1",
+						"https://ubuntu.com/security/notices/USN-5488-2",
+						"https://ubuntu.com/security/notices/USN-6457-1",
+						"https://www.cve.org/CVERecord?id=CVE-2022-2068",
+						"https://ubuntu.com/security/notices/USN-7018-1",
+					},
+					PublishedDate:    utils.MustTimeParse("2022-06-21T00:00:00Z"),
+					LastModifiedDate: utils.MustTimeParse("2025-09-08T16:49:35Z"),
+				},
+			},
+			{
+				Key:   []string{"vulnerability-id", "CVE-2022-2068"},
+				Value: map[string]any{},
+			},
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			vs := ubuntuosv.NewVulnSrc()
-			vulnsrctest.TestUpdate(t, vs, vulnsrctest.TestUpdateArgs{
-				Dir:        tt.dir,
-				WantValues: tt.wantValues,
-				WantErr:    tt.wantErr,
-				NoBuckets:  tt.noBuckets,
-			})
-		})
-	}
+			// CVE-2025-58056: Tests Pro→ESM with fixed version
+			{
+				Key: []string{"advisory-detail", "CVE-2025-58056", "ubuntu 16.04-ESM", "netty"},
+				Value: types.Advisory{
+					VendorIDs:          []string{"UBUNTU-CVE-2025-58056"},
+					VulnerableVersions: []string{"<1:4.0.34-1ubuntu0.1~esm3"},
+					PatchedVersions:    []string{"1:4.0.34-1ubuntu0.1~esm3"},
+				},
+			},
+			{
+				Key: []string{"advisory-detail", "CVE-2025-58056", "ubuntu 16.04", "netty"},
+				Value: types.Advisory{
+					VendorIDs:          []string{"UBUNTU-CVE-2025-58056"},
+					VulnerableVersions: []string{"<1:4.0.34-1ubuntu0.1~esm3"},
+					PatchedVersions:    []string{"1:4.0.34-1ubuntu0.1~esm3"},
+				},
+			},
+			{
+				Key: []string{"vulnerability-detail", "CVE-2025-58056", string(vulnerability.Ubuntu)},
+				Value: types.VulnerabilityDetail{
+					Description:  "Netty is an asynchronous event-driven network application framework for development of maintainable high performance protocol servers and clients. In versions 4.1.124.Final, and 4.2.0.Alpha3 through 4.2.4.Final, Netty incorrectly accepts standalone newline characters (LF) as a chunk-size line terminator, regardless of a preceding carriage return (CR), instead of requiring CRLF per HTTP/1.1 standards. When combined with reverse proxies that parse LF differently (treating it as part of the chunk extension), attackers can craft requests that the proxy sees as one request but Netty processes as two, enabling request smuggling attacks. This is fixed in versions 4.1.125.Final and 4.2.5.Final.",
+					CvssScoreV3:  7.5,
+					CvssVectorV3: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N",
+					References: []string{
+						"https://ubuntu.com/security/CVE-2025-58056",
+						"https://www.cve.org/CVERecord?id=CVE-2025-58056",
+						"https://datatracker.ietf.org/doc/html/rfc9112#name-chunked-transfer-coding",
+						"https://github.com/JLLeitschuh/unCVEed/issues/1",
+						"https://github.com/netty/netty/commit/edb55fd8e0a3bcbd85881e423464f585183d1284",
+						"https://github.com/netty/netty/issues/15522",
+						"https://github.com/netty/netty/pull/15611",
+						"https://github.com/netty/netty/security/advisories/GHSA-fghv-69vj-qj49",
+						"https://w4ke.info/2025/06/18/funky-chunks.html",
+						"https://ubuntu.com/security/notices/USN-7918-1",
+					},
+					PublishedDate:    utils.MustTimeParse("2025-09-03T21:15:00Z"),
+					LastModifiedDate: utils.MustTimeParse("2025-12-10T05:27:21Z"),
+				},
+			},
+			{
+				Key:   []string{"vulnerability-id", "CVE-2025-58056"},
+				Value: map[string]any{},
+			},
+		},
+	})
 }
 
 func TestResolveBucket(t *testing.T) {
