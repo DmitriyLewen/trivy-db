@@ -225,7 +225,8 @@ func (r *UbuntuVersionRange) Contains(ver string) (bool, error) {
 	}
 
 	// Check lower bound if r.from is specified
-	if r.from != "" {
+	// "0" means "all versions" in OSV, so we skip the lower bound check
+	if r.from != "" && r.from != "0" {
 		f, err := deb.NewVersion(r.from)
 		if err != nil {
 			return false, eb.Wrapf(err, "failed to parse from version")
