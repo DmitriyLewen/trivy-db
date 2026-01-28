@@ -3,6 +3,9 @@ package ubuntuosv_test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/aquasecurity/trivy-db/pkg/types"
 	"github.com/aquasecurity/trivy-db/pkg/utils"
 	ubuntuosv "github.com/aquasecurity/trivy-db/pkg/vulnsrc/ubuntu-osv"
@@ -166,7 +169,6 @@ func TestVulnSrc_Update(t *testing.T) {
 						URL:  "https://git.launchpad.net/ubuntu-cve-tracker",
 					},
 				},
-				// Vulnerability detail should be created once
 				{
 					Key: []string{
 						"vulnerability-detail",
@@ -200,6 +202,92 @@ func TestVulnSrc_Update(t *testing.T) {
 				WantErr:    tt.wantErr,
 				NoBuckets:  tt.noBuckets,
 			})
+		})
+	}
+}
+
+func TestResolveBucket(t *testing.T) {
+	tests := []struct {
+		name     string
+		suffix   string
+		wantName string
+		wantErr  bool
+	}{
+		{
+			name:     "simple version",
+			suffix:   "25.10",
+			wantName: "ubuntu 25.10",
+		},
+		{
+			name:     "version with LTS",
+			suffix:   "14.04:LTS",
+			wantName: "ubuntu 14.04",
+		},
+		{
+			name:     "version with LTS 20.04",
+			suffix:   "20.04:LTS",
+			wantName: "ubuntu 20.04",
+		},
+		{
+			name:     "Pro converts to ESM",
+			suffix:   "Pro:16.04:LTS",
+			wantName: "ubuntu 16.04-ESM",
+		},
+		{
+			name:     "Pro with 18.04",
+			suffix:   "Pro:18.04:LTS",
+			wantName: "ubuntu 18.04-ESM",
+		},
+		{
+			name:    "FIPS is skipped",
+			suffix:  "FIPS:16.04:LTS",
+			wantErr: true,
+		},
+		{
+			name:    "FIPS-updates is skipped",
+			suffix:  "FIPS-updates:18.04:LTS",
+			wantErr: true,
+		},
+		{
+			name:    "FIPS-preview is skipped",
+			suffix:  "FIPS-preview:20.04:LTS",
+			wantErr: true,
+		},
+		{
+			name:    "Pro:FIPS is skipped",
+			suffix:  "Pro:FIPS:16.04:LTS",
+			wantErr: true,
+		},
+		{
+			name:    "Pro:FIPS-updates is skipped",
+			suffix:  "Pro:FIPS-updates:18.04:LTS",
+			wantErr: true,
+		},
+		{
+			name:     "unknown 3-part modifier uses second part as version",
+			suffix:   "Unknown:16.04:LTS",
+			wantName: "ubuntu 16.04",
+		},
+		{
+			name:     "Pro Realtime Kernel converts to ESM",
+			suffix:   "Pro:22.04:LTS:Realtime:Kernel",
+			wantName: "ubuntu 22.04-ESM",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bucket, err := ubuntuosv.ResolveBucket(tt.suffix)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Nil(t, bucket)
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotNil(t, bucket)
+			assert.Equal(t, tt.wantName, bucket.Name())
 		})
 	}
 }
