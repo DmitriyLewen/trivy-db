@@ -185,6 +185,11 @@ func TestResolveBucket(t *testing.T) {
 			suffix:   "Pro:22.04:LTS:Realtime:Kernel",
 			wantName: "ubuntu 22.04-ESM",
 		},
+		{
+			name:     "NVIDIA BlueField uses version from first part",
+			suffix:   "22.04:LTS:for:NVIDIA:BlueField",
+			wantName: "ubuntu 22.04",
+		},
 	}
 
 	for _, tt := range tests {

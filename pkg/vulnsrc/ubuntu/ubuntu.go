@@ -33,7 +33,9 @@ var (
 // - "Ubuntu:Pro:22.04:LTS:Realtime:Kernel" -> ubuntu 22.04-ESM
 // - "Ubuntu:20.04:LTS" -> ubuntu 20.04
 // - "Ubuntu:25.10" -> ubuntu 25.10
+// - "Ubuntu:22.04:LTS:for:NVIDIA:BlueField" -> ubuntu 22.04
 // Note: FIPS ecosystems (e.g., "Ubuntu:Pro:FIPS:16.04:LTS") are not supported and will be skipped
+// TODO simplify logic??? check parts with `.`.
 func resolveBucket(suffix string) (bucket.Bucket, error) {
 	// Split by colon to get parts
 	// e.g. "14.04:LTS", "Pro:16.04:LTS", "25.10"
@@ -41,10 +43,6 @@ func resolveBucket(suffix string) (bucket.Bucket, error) {
 
 	// "25.10" or "14.04:LTS"
 	if len(parts) <= 2 {
-		// parts[0] must be a version (e.g. "25.10", "14.04"), not a modifier like "lts"
-		if !strings.Contains(parts[0], ".") {
-			return nil, errSkipped
-		}
 		return newBucket(parts[0], source), nil
 	}
 
@@ -52,6 +50,12 @@ func resolveBucket(suffix string) (bucket.Bucket, error) {
 	// e.g. "FIPS:16.04:LTS", "FIPS-updates:18.04:LTS", "Pro:FIPS:16.04:LTS"
 	if strings.HasPrefix(parts[0], "fips") || strings.HasPrefix(parts[1], "fips") {
 		return nil, errSkipped
+	}
+
+	// If parts[0] is a version (contains "."), use it directly
+	// e.g. "22.04:LTS:for:NVIDIA:BlueField" -> ubuntu 22.04
+	if strings.Contains(parts[0], ".") {
+		return newBucket(parts[0], source), nil
 	}
 
 	// "Pro:16.04:LTS", "Pro:22.04:LTS:Realtime:Kernel", etc.
