@@ -1,151 +1,91 @@
 package ubuntu
 
 import (
-	"encoding/json"
-	"io"
-	"path/filepath"
-	"slices"
-
-	"github.com/samber/oops"
-	bolt "go.etcd.io/bbolt"
+	"strings"
 
 	"github.com/aquasecurity/trivy-db/pkg/db"
-	"github.com/aquasecurity/trivy-db/pkg/log"
+	"github.com/samber/oops"
+
+	"github.com/aquasecurity/trivy-db/pkg/ecosystem"
 	"github.com/aquasecurity/trivy-db/pkg/types"
-	"github.com/aquasecurity/trivy-db/pkg/utils"
 	"github.com/aquasecurity/trivy-db/pkg/vulnsrc/bucket"
+	"github.com/aquasecurity/trivy-db/pkg/vulnsrc/osv"
 	"github.com/aquasecurity/trivy-db/pkg/vulnsrc/vulnerability"
 )
 
-const ubuntuDir = "ubuntu"
-
 var (
-	targetStatuses        = []string{"needed", "deferred", "released"}
-	UbuntuReleasesMapping = map[string]string{
-		"precise":  "12.04",
-		"quantal":  "12.10",
-		"raring":   "13.04",
-		"saucy":    "13.10",
-		"trusty":   "14.04",
-		"utopic":   "14.10",
-		"vivid":    "15.04",
-		"wily":     "15.10",
-		"xenial":   "16.04",
-		"yakkety":  "16.10",
-		"zesty":    "17.04",
-		"artful":   "17.10",
-		"bionic":   "18.04",
-		"cosmic":   "18.10",
-		"disco":    "19.04",
-		"eoan":     "19.10",
-		"focal":    "20.04",
-		"groovy":   "20.10",
-		"hirsute":  "21.04",
-		"impish":   "21.10",
-		"jammy":    "22.04",
-		"kinetic":  "22.10",
-		"lunar":    "23.04",
-		"mantic":   "23.10",
-		"noble":    "24.04",
-		"oracular": "24.10",
-		"plucky":   "25.04",
-		// ESM versions:
-		"precise/esm": "12.04-ESM",
-		"trusty/esm":  "14.04-ESM",
-		// Possible multiple values for one release:
-		// (release_list="trusty trusty/esm xenial esm-infra/xenial esm-apps/xenial bionic esm-infra/bionic esm-apps/bionic focal esm-apps/focal jammy esm-apps/jammy noble oracular plucky")
-		// cf. https://wiki.ubuntu.com/SecurityTeam/BuildEnvironment#line867
-		"esm-infra/xenial": "16.04-ESM",
-		"esm-apps/xenial":  "16.04-ESM",
-		"esm-infra/bionic": "18.04-ESM",
-		"esm-apps/bionic":  "18.04-ESM",
-		"esm-infra/focal":  "20.04-ESM",
-		"esm-apps/focal":   "20.04-ESM",
-	}
+	vulnsDir = "ubuntu-security-notices/cve"
 
 	source = types.DataSource{
 		ID:   vulnerability.Ubuntu,
 		Name: "Ubuntu CVE Tracker",
-		URL:  "https://git.launchpad.net/ubuntu-cve-tracker",
+		URL:  "https://github.com/canonical/ubuntu-security-notices",
 	}
+
+	// errSkipped is returned when ecosystem should be skipped (not an actual error)
+	errSkipped = oops.Errorf("skipped")
 )
 
-type Option func(src *VulnSrc)
+// resolveBucket creates an Ubuntu bucket from ecosystem string
+// Examples:
+// - "Ubuntu:14.04:LTS" -> ubuntu 14.04
+// - "Ubuntu:Pro:16.04:LTS" -> ubuntu 16.04-ESM
+// - "Ubuntu:Pro:22.04:LTS:Realtime:Kernel" -> ubuntu 22.04-ESM
+// - "Ubuntu:20.04:LTS" -> ubuntu 20.04
+// - "Ubuntu:25.10" -> ubuntu 25.10
+// Note: FIPS ecosystems (e.g., "Ubuntu:Pro:FIPS:16.04:LTS") are not supported and will be skipped
+func resolveBucket(suffix string) (bucket.Bucket, error) {
+	// Split by colon to get parts
+	// e.g. "14.04:LTS", "Pro:16.04:LTS", "25.10"
+	parts := strings.Split(strings.ToLower(suffix), ":")
 
-func WithCustomPut(put db.CustomPut) Option {
-	return func(src *VulnSrc) {
-		src.put = put
+	// "25.10" or "14.04:LTS"
+	if len(parts) <= 2 {
+		return newBucket(parts[0], source), nil
 	}
+
+	// Skip FIPS ecosystems (check first two parts for "fips")
+	// e.g. "FIPS:16.04:LTS", "FIPS-updates:18.04:LTS", "Pro:FIPS:16.04:LTS"
+	if strings.HasPrefix(parts[0], "fips") || strings.HasPrefix(parts[1], "fips") {
+		return nil, errSkipped
+	}
+
+	// "Pro:16.04:LTS", "Pro:22.04:LTS:Realtime:Kernel", etc.
+	version := parts[1]
+	if parts[0] == "pro" {
+		version += "-ESM"
+	}
+
+	return newBucket(version, source), nil
 }
 
 type VulnSrc struct {
-	put    db.CustomPut
-	dbc    db.Operation
-	logger *log.Logger
+	dbc db.Operation
 }
 
-func NewVulnSrc(opts ...Option) VulnSrc {
-	src := VulnSrc{
-		put:    defaultPut,
-		dbc:    db.Config{},
-		logger: log.WithPrefix("ubuntu"),
+func NewVulnSrc() VulnSrc {
+	return VulnSrc{
+		dbc: db.Config{},
 	}
-
-	for _, o := range opts {
-		o(&src)
-	}
-
-	return src
 }
 
-func (vs VulnSrc) Name() types.SourceID {
+func (VulnSrc) Name() types.SourceID {
 	return source.ID
 }
 
-func (vs VulnSrc) Update(dir string) error {
-	rootDir := filepath.Join(dir, "vuln-list", ubuntuDir)
-	eb := oops.In("ubuntu").With("root_dir", rootDir)
-	var cves []UbuntuCVE
-	err := utils.FileWalk(rootDir, func(r io.Reader, path string) error {
-		var cve UbuntuCVE
-		if err := json.NewDecoder(r).Decode(&cve); err != nil {
-			return eb.With("file_path", path).Wrapf(err, "json decode error")
-		}
-		cves = append(cves, cve)
-		return nil
-	})
-	if err != nil {
-		return eb.Wrapf(err, "walk error")
+func (vs VulnSrc) Update(root string) error {
+	eb := oops.In("ubuntu-new").With("file_path", root)
+
+	sources := map[ecosystem.Type]types.DataSource{
+		ecosystem.Ubuntu: source,
 	}
 
-	if err = vs.save(cves); err != nil {
-		return eb.Wrapf(err, "save error")
+	if err := osv.New(vulnsDir, source.ID, sources,
+		osv.WithBucketResolver("ubuntu", resolveBucket),
+		osv.WithTransformer(&transformer{})).Update(root); err != nil {
+		return eb.Wrapf(err, "failed to update Ubuntu vulnerability data")
 	}
 
-	return nil
-}
-
-func (vs VulnSrc) save(cves []UbuntuCVE) error {
-	vs.logger.Info("Saving DB")
-	err := vs.dbc.BatchUpdate(func(tx *bolt.Tx) error {
-		err := vs.commit(tx, cves)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
-	if err != nil {
-		return oops.Wrapf(err, "batch update error")
-	}
-	return nil
-}
-
-func (vs VulnSrc) commit(tx *bolt.Tx, cves []UbuntuCVE) error {
-	for _, cve := range cves {
-		if err := vs.put(vs.dbc, tx, cve); err != nil {
-			return oops.Wrapf(err, "put error")
-		}
-	}
 	return nil
 }
 
@@ -157,70 +97,4 @@ func (vs VulnSrc) Get(params db.GetParams) ([]types.Advisory, error) {
 		return nil, eb.Wrapf(err, "failed to get advisories")
 	}
 	return advisories, nil
-}
-
-func defaultPut(dbc db.Operation, tx *bolt.Tx, advisory any) error {
-	cve, ok := advisory.(UbuntuCVE)
-	if !ok {
-		return oops.Errorf("unknown type")
-	}
-
-	for packageName, patch := range cve.Patches {
-		pkgName := string(packageName)
-		for release, status := range patch {
-			if !slices.Contains(targetStatuses, status.Status) {
-				continue
-			}
-			osVersion, ok := UbuntuReleasesMapping[string(release)]
-			if !ok {
-				continue
-			}
-			platformName := bucket.NewUbuntu(osVersion).Name()
-			if err := dbc.PutDataSource(tx, platformName, source); err != nil {
-				return oops.Wrapf(err, "failed to put data source")
-			}
-
-			adv := types.Advisory{}
-			if status.Status == "released" {
-				adv.FixedVersion = status.Note
-			}
-			if err := dbc.PutAdvisoryDetail(tx, cve.Candidate, pkgName, []string{platformName}, adv); err != nil {
-				return oops.Wrapf(err, "failed to save advisory")
-			}
-
-			vuln := types.VulnerabilityDetail{
-				Severity:    SeverityFromPriority(cve.Priority),
-				References:  cve.References,
-				Description: cve.Description,
-			}
-			if err := dbc.PutVulnerabilityDetail(tx, cve.Candidate, source.ID, vuln); err != nil {
-				return oops.Wrapf(err, "failed to save vulnerability")
-			}
-
-			// for optimization
-			if err := dbc.PutVulnerabilityID(tx, cve.Candidate); err != nil {
-				return oops.Wrapf(err, "failed to save the vulnerability ID")
-			}
-		}
-	}
-
-	return nil
-}
-
-// SeverityFromPriority converts Ubuntu priority into Trivy severity
-func SeverityFromPriority(priority string) types.Severity {
-	switch priority {
-	case "untriaged":
-		return types.SeverityUnknown
-	case "negligible", "low":
-		return types.SeverityLow
-	case "medium":
-		return types.SeverityMedium
-	case "high":
-		return types.SeverityHigh
-	case "critical":
-		return types.SeverityCritical
-	default:
-		return types.SeverityUnknown
-	}
 }

@@ -64,18 +64,18 @@ trivy-db:
 
 .PHONY: db-fetch-langs
 db-fetch-langs:
-	mkdir -p $(CACHE_DIR)/{ruby-advisory-db,php-security-advisories,nodejs-security-wg,ghsa,cocoapods-specs,bitnami-vulndb,govulndb,k8s-cve-feed,julia,ubuntu-security-notices}
-	wget -qO - https://github.com/rubysec/ruby-advisory-db/archive/master.tar.gz | tar xz -C $(CACHE_DIR)/ruby-advisory-db --strip-components=1
-	wget -qO - https://github.com/FriendsOfPHP/security-advisories/archive/master.tar.gz | tar xz -C $(CACHE_DIR)/php-security-advisories --strip-components=1
-	wget -qO - https://github.com/nodejs/security-wg/archive/main.tar.gz | tar xz -C $(CACHE_DIR)/nodejs-security-wg --strip-components=1
-	wget -qO - https://github.com/bitnami/vulndb/archive/main.tar.gz | tar xz -C $(CACHE_DIR)/bitnami-vulndb --strip-components=1
-	wget -qO - https://github.com/github/advisory-database/archive/refs/heads/main.tar.gz | tar xz -C $(CACHE_DIR)/ghsa --strip-components=1
-	wget -qO - https://github.com/golang/vulndb/archive/refs/heads/master.tar.gz | tar xz -C $(CACHE_DIR)/govulndb --strip-components=1
-	## required to convert GHSA Swift repo links to Cocoapods package names
-	wget -qO - https://github.com/CocoaPods/Specs/archive/master.tar.gz | tar xz -C $(CACHE_DIR)/cocoapods-specs --strip-components=1
-	wget -qO - https://github.com/kubernetes-sigs/cve-feed-osv/archive/main.tar.gz | tar xz -C $(CACHE_DIR)/k8s-cve-feed --strip-components=1
-	wget -qO - https://github.com/JuliaLang/SecurityAdvisories.jl/archive/refs/heads/generated/osv.tar.gz | tar xz -C $(CACHE_DIR)/julia --strip-components=1
-	wget -qO - https://github.com/canonical/ubuntu-security-notices/archive/refs/heads/master.tar.g | tar xz -C $(CACHE_DIR)/ubuntu-security-notices --strip-components=1
+#	mkdir -p $(CACHE_DIR)/{ruby-advisory-db,php-security-advisories,nodejs-security-wg,ghsa,cocoapods-specs,bitnami-vulndb,govulndb,k8s-cve-feed,julia,ubuntu-security-notices}
+#	wget -qO - https://github.com/rubysec/ruby-advisory-db/archive/master.tar.gz | tar xz -C $(CACHE_DIR)/ruby-advisory-db --strip-components=1
+#	wget -qO - https://github.com/FriendsOfPHP/security-advisories/archive/master.tar.gz | tar xz -C $(CACHE_DIR)/php-security-advisories --strip-components=1
+#	wget -qO - https://github.com/nodejs/security-wg/archive/main.tar.gz | tar xz -C $(CACHE_DIR)/nodejs-security-wg --strip-components=1
+#	wget -qO - https://github.com/bitnami/vulndb/archive/main.tar.gz | tar xz -C $(CACHE_DIR)/bitnami-vulndb --strip-components=1
+#	wget -qO - https://github.com/github/advisory-database/archive/refs/heads/main.tar.gz | tar xz -C $(CACHE_DIR)/ghsa --strip-components=1
+#	wget -qO - https://github.com/golang/vulndb/archive/refs/heads/master.tar.gz | tar xz -C $(CACHE_DIR)/govulndb --strip-components=1
+#	## required to convert GHSA Swift repo links to Cocoapods package names
+#	wget -qO - https://github.com/CocoaPods/Specs/archive/master.tar.gz | tar xz -C $(CACHE_DIR)/cocoapods-specs --strip-components=1
+#	wget -qO - https://github.com/kubernetes-sigs/cve-feed-osv/archive/main.tar.gz | tar xz -C $(CACHE_DIR)/k8s-cve-feed --strip-components=1
+#	wget -qO - https://github.com/JuliaLang/SecurityAdvisories.jl/archive/refs/heads/generated/osv.tar.gz | tar xz -C $(CACHE_DIR)/julia --strip-components=1
+	wget -qO - https://github.com/canonical/ubuntu-security-notices/archive/refs/heads/master.tar.gz | tar xz -C $(CACHE_DIR)/ubuntu-security-notices --strip-components=1
 
 .PHONY: db-build
 db-build: trivy-db

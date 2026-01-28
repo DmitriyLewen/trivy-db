@@ -1,4 +1,4 @@
-package ubuntuosv
+package ubuntu
 
 import (
 	"strings"
