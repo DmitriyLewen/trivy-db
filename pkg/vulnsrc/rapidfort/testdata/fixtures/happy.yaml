@@ -47,7 +47,7 @@
             PatchedVersions:
               - "7.76.1-26.fc39"
             Severity: 2
-- bucket: rapidfort
+- bucket: rapidfort Red Hat
   pairs:
     - bucket: curl
       pairs:
@@ -58,3 +58,14 @@
             PatchedVersions:
               - "7.76.1-26.rf"
             Severity: 2
+- bucket: rapidfort ubuntu
+  pairs:
+    - bucket: rf-curl
+      pairs:
+        - key: CVE-2023-38545
+          value:
+            VulnerableVersions:
+              - ">= 0:0, < 0:8.4.0-10rfubu"
+            PatchedVersions:
+              - "0:8.4.0-10rfubu"
+            Severity: 4

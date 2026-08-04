@@ -27,6 +27,14 @@ const rapidfortDir = "rapidfort-security-advisories"
 // repo that groups advisory JSON files by operating system.
 const osSubDir = "OS"
 
+// Supported `Event.Identifier` values.
+const (
+	rapidFortIdentifier = "rf"
+	redHatIdentifier    = "el"
+	fedoraIdentifier    = "fc"
+	ubuntuIdentifier    = "ubuntu"
+)
+
 var source = types.DataSource{
 	ID:   vulnerability.RapidFort,
 	Name: "RapidFort Security Advisories",
@@ -102,25 +110,22 @@ func (vs VulnSrc) parse(rootDir string) ([]entry, error) {
 			vs.logger.Warn("Skipping file with unexpected path structure", "path", path)
 			return nil
 		}
-		osName := ecosystem.Type(parts[0])
+		eco := ecosystem.Type(parts[0])
+
+		// RapidFort owns which OSes its feed ships, so an OS this build doesn't ingest (e.g. debian) is expected rather than something to warn about on every file.
+		if _, err := newBucket(eco, ""); err != nil {
+			return nil
+		}
 
 		var src SourcePackageAdvisory
 		if err := json.NewDecoder(r).Decode(&src); err != nil {
 			return eb.With("path", path).Wrapf(err, "json decode error")
 		}
 
-		// ubuntu/alpine feeds already hold one distribution per file. The RedHat
-		// feed mixes RHEL/Fedora/rf ranges, so split it into one advisory set per
-		// distribution first; both shapes then convert the same way.
-		sources := map[ecosystem.Type]SourcePackageAdvisory{
-			osName: src,
-		}
-		if osName == ecosystem.RedHat {
-			sources = vs.splitRedHat(src, path)
-		}
-		for eco, s := range sources {
-			entries = append(entries, toEntries(eco, s)...)
-		}
+		// One file can carry ranges for several distributions, tagged per range
+		// by an identifier, so route each range to the bucket it belongs to
+		// before converting.
+		entries = append(entries, toEntries(src.PackageName, vs.split(eco, src, path))...)
 		return nil
 	})
 	if err != nil {
@@ -129,23 +134,14 @@ func (vs VulnSrc) parse(rootDir string) ([]entry, error) {
 	return entries, nil
 }
 
-// toEntries converts one distribution's advisories (version -> cveID -> CVEEntry)
-// into DB entries. An unsupported base OS (e.g. debian) is skipped silently:
-// RapidFort owns which OSes its feed ships, so an OS this build doesn't ingest
-// is expected, not something to warn about on every file.
-func toEntries(osName ecosystem.Type, src SourcePackageAdvisory) []entry {
+// toEntries converts the per-bucket advisories of one package into DB entries.
+func toEntries(pkgName string, buckets map[bucket.DataSourceBucket]map[string]CVEEntry) []entry {
 	var entries []entry
-	for version, cveMap := range src.Advisory {
-		b, err := newBucket(osName, version)
-		if err != nil {
-			// newBucket only rejects the base ecosystem (constant for this file),
-			// not the version, so a failure means the whole file is unsupported.
-			return nil
-		}
+	for b, cveMap := range buckets {
 		for cveID, cve := range cveMap {
 			entries = append(entries, entry{
 				bucket:   b,
-				pkgName:  src.PackageName,
+				pkgName:  pkgName,
 				cveID:    cveID,
 				advisory: buildAdvisory(cve.Severity, cve.Events),
 				detail:   buildVulnerabilityDetail(cve),
@@ -155,81 +151,90 @@ func toEntries(osName ecosystem.Type, src SourcePackageAdvisory) []entry {
 	return entries
 }
 
-// splitRedHat re-keys a mixed RedHat feed file into one advisory set per
-// distribution it targets — "redhat" (elN), "fedora" (fcNN) and "rf" — keyed by
-// that distribution's own version. Dropping the RedHat version keys collapses
-// the fcNN/rf ranges the feed replicates identically under every RHEL major.
-func (vs VulnSrc) splitRedHat(src SourcePackageAdvisory, path string) map[ecosystem.Type]SourcePackageAdvisory {
-	out := map[ecosystem.Type]SourcePackageAdvisory{}
-	// Walk the RHEL majors in a stable order so the collected event order and
-	// the CVE meta chosen "on first sight" below don't depend on Go's random
-	// map iteration — the resulting Advisory is written to disk verbatim.
-	majors := make([]string, 0, len(src.Advisory))
-	for major := range src.Advisory {
-		majors = append(majors, major)
+// split re-keys one feed file into an advisory set per bucket its ranges target.
+// One file can mix distributions, so it is the identifier of a range, not the version key it sits under, that decides the bucket:
+//
+//	OS/redhat/rf-curl.json, key "9":     el9 → rapidfort Red Hat 9, fc42 → rapidfort fedora 42, rf → rapidfort Red Hat
+//	OS/ubuntu/rf-curl.json, key "22.04": ubuntu or untagged → rapidfort ubuntu 22.04, rf → rapidfort ubuntu
+//
+// The RedHat feed repeats its rf and fcNN ranges under every RHEL major, so the identical copies collapse into one.
+func (vs VulnSrc) split(eco ecosystem.Type, src SourcePackageAdvisory, path string) map[bucket.DataSourceBucket]map[string]CVEEntry {
+	out := map[bucket.DataSourceBucket]map[string]CVEEntry{}
+	// Walk the version keys in a stable order — the Advisory is written to disk verbatim, so its event order must be deterministic.
+	ecoVers := make([]string, 0, len(src.Advisory))
+	for ecoVer := range src.Advisory {
+		ecoVers = append(ecoVers, ecoVer)
 	}
-	sort.Strings(majors)
+	sort.Strings(ecoVers)
 
-	for _, major := range majors {
-		for cveID, cve := range src.Advisory[major] {
+	for _, ecoVer := range ecoVers {
+		for cveID, cve := range src.Advisory[ecoVer] {
 			for _, ev := range cve.Events {
 				if ev.Introduced == "" && ev.Fixed == "" {
 					continue
 				}
-				eco, version, ok := redhatRangeTarget(ev.Identifier)
-				if !ok {
-					vs.logger.Warn("Skipping RedHat range with an unusable distribution identifier",
-						"path", path, "cve", cveID, "identifier", ev.Identifier)
+				b, err := resolveBucket(eco, ecoVer, ev.Identifier)
+				if err != nil {
+					vs.logger.Warn("Skipping range", "path", path, "cve", cveID, "err", err)
 					continue
 				}
-				spa, ok := out[eco]
+				cveMap, ok := out[b]
 				if !ok {
-					spa = SourcePackageAdvisory{
-						PackageName: src.PackageName, Advisory: map[string]map[string]CVEEntry{},
-					}
-					out[eco] = spa
-				}
-				if spa.Advisory[version] == nil {
-					spa.Advisory[version] = map[string]CVEEntry{}
+					cveMap = map[string]CVEEntry{}
+					out[b] = cveMap
 				}
 				// Copy the CVE meta on first sight, then collect its events.
-				e, ok := spa.Advisory[version][cveID]
+				e, ok := cveMap[cveID]
 				if !ok {
 					e = cve
 					e.Events = nil
 				}
-				// Skip the identical copies the feed repeats under every RHEL major.
+				// Skip the identical copies the feed repeats under every version key.
 				if !slices.Contains(e.Events, ev) {
 					e.Events = append(e.Events, ev)
 				}
-				spa.Advisory[version][cveID] = e
+				cveMap[cveID] = e
 			}
 		}
 	}
 	return out
 }
 
-// redhatRangeTarget maps a RedHat range identifier (elN / fcNN / rf) to the
-// distribution and version it belongs to, returning false for identifiers
-// Trivy can't dispatch to.
-func redhatRangeTarget(identifier string) (eco ecosystem.Type, version string, ok bool) {
+// resolveBucket works out which bucket one range belongs to, failing for ranges Trivy can't dispatch.
+// eco and ecoVer are the OS of the feed and the version key the range is listed under; the identifier can override both.
+func resolveBucket(eco ecosystem.Type, ecoVer, identifier string) (bucket.DataSourceBucket, error) {
+	eb := oops.With("identifier", identifier)
 	switch {
-	case identifier == "rf":
-		return ecosystem.RapidFort, "", true
-	case strings.HasPrefix(identifier, "el"):
-		version = strings.TrimPrefix(identifier, "el")
-		return ecosystem.RedHat, version, isVersionNumber(version)
-	case strings.HasPrefix(identifier, "fc"):
-		version = strings.TrimPrefix(identifier, "fc")
-		return ecosystem.Fedora, version, isVersionNumber(version)
+	// RapidFort's rebuilds are not tied to a distro release: they keep the feed's OS but drop the version.
+	case identifier == rapidFortIdentifier:
+		ecoVer = ""
+	// The RPM dist tags of the RedHat feed name the distribution and carry its version.
+	case strings.HasPrefix(identifier, redHatIdentifier):
+		eco, ecoVer = ecosystem.RedHat, strings.TrimPrefix(identifier, redHatIdentifier)
+	case strings.HasPrefix(identifier, fedoraIdentifier):
+		eco, ecoVer = ecosystem.Fedora, strings.TrimPrefix(identifier, fedoraIdentifier)
+	// The Ubuntu feed tags the distribution's own packages with "ubuntu": they belong to the release the file lists them under.
+	case identifier == ubuntuIdentifier:
+		// Keep eco and ecoVer as the feed listed them.
+	// The feeds that don't tag their ranges yet (alpine, and most of the Ubuntu files) list nothing but the distribution's own packages, so an untagged range belongs to the file's release as well.
+	case identifier == "":
+		// Keep eco and ecoVer as the feed listed them.
+	// The identifiers of the other feeds have to be added above as they appear — an unknown one is dropped rather than guessed.
+	default:
+		return nil, eb.Errorf("unusable distribution identifier")
 	}
-	return "", "", false
+
+	if ecoVer != "" && !isVersionNumber(ecoVer) {
+		return nil, eb.With("version", ecoVer).Errorf("unusable distribution version")
+	}
+	return newBucket(eco, ecoVer)
 }
 
 // isVersionNumber reports whether s looks like a distro version number:
 // dot-separated groups of digits, e.g. "9", "44" or "3.18". Empty, leading,
 // trailing or doubled dots (e.g. "", ".", "1.", "1..2") are rejected so a
-// malformed identifier can't produce a bogus bucket like "rapidfort Red Hat .".
+// malformed identifier (e.g. "fcrawhide") or version key can't produce a bogus
+// bucket like "rapidfort fedora rawhide".
 func isVersionNumber(s string) bool {
 	if s == "" {
 		return false
@@ -315,8 +320,8 @@ func buildAdvisory(severity string, events []Event) types.Advisory {
 	}
 
 	// Sort for a stable on-disk DB: events for the same distribution can be
-	// collected from several RHEL majors (see splitRedHat), so their source
-	// order is not guaranteed. The lists are independent (no per-range
+	// collected from several version keys of the file (see split), so their
+	// source order is not guaranteed. The lists are independent (no per-range
 	// identifiers), so sorting each on its own is safe.
 	sort.Strings(patched)
 	sort.Strings(vulnerable)

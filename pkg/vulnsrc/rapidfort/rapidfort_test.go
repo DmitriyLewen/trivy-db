@@ -98,6 +98,79 @@ func TestVulnSrc_Update(t *testing.T) {
 					},
 					Value: map[string]any{},
 				},
+				// The Ubuntu feed tags the ranges of a package RapidFort rebuilds:
+				// "rf" for the rebuild, "ubuntu" for the distribution's own
+				// packages. They must not share a bucket — an Ubuntu package
+				// already past the Ubuntu fix would otherwise still match the
+				// (lower) rebuild range under dpkg comparison.
+				{
+					Key: []string{
+						"data-source",
+						"rapidfort ubuntu",
+					},
+					Value: types.DataSource{
+						ID:     vulnerability.RapidFort,
+						Name:   "RapidFort Security Advisories",
+						URL:    "https://github.com/rapidfort/security-advisories",
+						BaseID: "ubuntu",
+					},
+				},
+				{
+					Key: []string{
+						"advisory-detail",
+						"CVE-2023-38545",
+						"rapidfort ubuntu",
+						"rf-curl",
+					},
+					Value: types.Advisory{
+						PatchedVersions:    []string{"0:8.4.0-10rfubu"},
+						VulnerableVersions: []string{">= 0:0, < 0:8.4.0-10rfubu"},
+						Severity:           types.SeverityCritical,
+					},
+				},
+				{
+					Key: []string{
+						"data-source",
+						"rapidfort ubuntu 22.04",
+					},
+					Value: types.DataSource{
+						ID:     vulnerability.RapidFort,
+						Name:   "RapidFort Security Advisories",
+						URL:    "https://github.com/rapidfort/security-advisories",
+						BaseID: "ubuntu",
+					},
+				},
+				{
+					Key: []string{
+						"advisory-detail",
+						"CVE-2023-38545",
+						"rapidfort ubuntu 22.04",
+						"rf-curl",
+					},
+					Value: types.Advisory{
+						PatchedVersions:    []string{"0:7.81.0-1ubuntu1.14"},
+						VulnerableVersions: []string{">= 0:7.81.0-1ubuntu1.13, < 0:7.81.0-1ubuntu1.14"},
+						Severity:           types.SeverityCritical,
+					},
+				},
+				{
+					Key: []string{
+						"vulnerability-detail",
+						"CVE-2023-38545",
+						"rapidfort",
+					},
+					Value: types.VulnerabilityDetail{
+						Title:       "curl: SOCKS5 heap buffer overflow",
+						Description: "This flaw makes curl overflow a heap based buffer in the SOCKS5 proxy handshake.",
+					},
+				},
+				{
+					Key: []string{
+						"vulnerability-id",
+						"CVE-2023-38545",
+					},
+					Value: map[string]any{},
+				},
 				{
 					Key: []string{
 						"data-source",
@@ -231,19 +304,20 @@ func TestVulnSrc_Update(t *testing.T) {
 				{
 					Key: []string{
 						"data-source",
-						"rapidfort",
+						"rapidfort Red Hat",
 					},
 					Value: types.DataSource{
-						ID:   vulnerability.RapidFort,
-						Name: "RapidFort Security Advisories",
-						URL:  "https://github.com/rapidfort/security-advisories",
+						ID:     vulnerability.RapidFort,
+						Name:   "RapidFort Security Advisories",
+						URL:    "https://github.com/rapidfort/security-advisories",
+						BaseID: "redhat",
 					},
 				},
 				{
 					Key: []string{
 						"advisory-detail",
 						"CVE-2023-27536",
-						"rapidfort",
+						"rapidfort Red Hat",
 						"curl",
 					},
 					Value: types.Advisory{
@@ -254,8 +328,9 @@ func TestVulnSrc_Update(t *testing.T) {
 				},
 				{
 					// Open vulnerability: no patched version. The source entry
-					// also carries a range without an identifier — it must be
-					// skipped, so only the el9 range remains.
+					// also carries a range without an identifier, which belongs
+					// to the release the file lists it under — the same bucket
+					// as the el9 range here.
 					Key: []string{
 						"advisory-detail",
 						"CVE-2024-99999",
@@ -263,7 +338,7 @@ func TestVulnSrc_Update(t *testing.T) {
 						"curl",
 					},
 					Value: types.Advisory{
-						VulnerableVersions: []string{">=7.76.1-14.el9"},
+						VulnerableVersions: []string{">=1.0", ">=7.76.1-14.el9"},
 						Severity:           types.SeverityHigh,
 					},
 				},
@@ -616,8 +691,10 @@ func TestVulnSrc_Get(t *testing.T) {
 			},
 		},
 		{
-			name:    "rf advisory found",
-			baseOS:  ecosystem.RapidFort,
+			// RapidFort's own rebuilds are queried with an empty OS version:
+			// they are not tied to a distro release.
+			name:    "rf advisory found - redhat rebuild",
+			baseOS:  ecosystem.RedHat,
 			osVer:   "",
 			pkgName: "curl",
 			fixtures: []string{
@@ -631,9 +708,34 @@ func TestVulnSrc_Get(t *testing.T) {
 					PatchedVersions:    []string{"7.76.1-26.rf"},
 					Severity:           types.SeverityMedium,
 					DataSource: &types.DataSource{
-						ID:   vulnerability.RapidFort,
-						Name: "RapidFort Security Advisories",
-						URL:  "https://github.com/rapidfort/security-advisories",
+						ID:     vulnerability.RapidFort,
+						Name:   "RapidFort Security Advisories",
+						URL:    "https://github.com/rapidfort/security-advisories",
+						BaseID: "redhat",
+					},
+				},
+			},
+		},
+		{
+			name:    "rf advisory found - ubuntu rebuild",
+			baseOS:  ecosystem.Ubuntu,
+			osVer:   "",
+			pkgName: "rf-curl",
+			fixtures: []string{
+				"testdata/fixtures/happy.yaml",
+				"testdata/fixtures/data-source.yaml",
+			},
+			want: []types.Advisory{
+				{
+					VulnerabilityID:    "CVE-2023-38545",
+					VulnerableVersions: []string{">= 0:0, < 0:8.4.0-10rfubu"},
+					PatchedVersions:    []string{"0:8.4.0-10rfubu"},
+					Severity:           types.SeverityCritical,
+					DataSource: &types.DataSource{
+						ID:     vulnerability.RapidFort,
+						Name:   "RapidFort Security Advisories",
+						URL:    "https://github.com/rapidfort/security-advisories",
+						BaseID: "ubuntu",
 					},
 				},
 			},
