@@ -52,6 +52,10 @@ jobs:
         run: make build
 
       - name: Build database (profiled)
+        env:
+          # Max live heap observed across all sources is ~6.7GB, so this leaves
+          # ~3.3GB of headroom for garbage between collections.
+          GOMEMLIMIT: 10GiB
         run: |
           # Sample available memory and the builder's RSS every 5s in the background.
           # The samples are streamed to the log, so the curve survives even when the
