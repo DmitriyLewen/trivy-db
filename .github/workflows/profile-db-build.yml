@@ -1,0 +1,68 @@
+---
+name: Profile DB build
+on:
+  # Triggered by pushing to this throwaway branch: `workflow_dispatch` requires
+  # the workflow to be present on the repository's default branch.
+  push:
+    branches:
+      - ci/profile-no-cleanup
+  workflow_dispatch:
+env:
+  # Always fetch the upstream data: forks of vuln-list are stale and would not
+  # reproduce the memory profile of the real build.
+  REPO_OWNER: aquasecurity
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Profile DB build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: Report disk and swap layout
+        run: |
+          df -h
+          echo "---"
+          swapon --show || echo "no swap"
+          echo "---"
+          free -h
+
+      - name: Set up Go
+        uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
+        with:
+          go-version-file: go.mod
+
+      - name: Download vuln-list and advisories
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make db-fetch-langs db-fetch-vuln-list
+
+      - name: Report input sizes
+        run: |
+          du -sh cache/* | sort -h
+          df -h /
+
+      - name: Build the binary
+        run: make build
+
+      - name: Build database (profiled)
+        run: |
+          # Sample memory, swap and free disk every 5s in the background. The samples
+          # are streamed to the log, so the curve survives an OOM kill.
+          (
+            while true; do
+              avail=$(awk '/^MemAvailable:/ {printf "%d", $2 / 1024}' /proc/meminfo)
+              swap=$(awk '/^SwapTotal:/ {t=$2} /^SwapFree:/ {f=$2} END {printf "%d/%d", (t-f)/1024, t/1024}' /proc/meminfo)
+              rss=$(ps -o rss= -C trivy-db 2>/dev/null | head -1 | tr -d ' ')
+              disk=$(df -m --output=avail / | tail -1 | tr -d ' ')
+              echo "[mem] $(date -u +%H:%M:%S) avail=${avail}MB swap=${swap}MB rss=$(( ${rss:-0} / 1024 ))MB disk=${disk}MB"
+              sleep 5
+            done
+          ) &
+          sampler=$!
+          trap 'kill "${sampler}" 2>/dev/null' EXIT
+
+          GODEBUG=gctrace=1 /usr/bin/time -v make db-build
